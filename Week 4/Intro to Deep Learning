@@ -920,12 +920,14 @@ X_train_proc.shape
 
 `(294, 25)`
 
-Build and Train the Model
+---
+
+# Build and Train the Model
 
 We will set the input dimensions to the number of columns in our processed data so Keras can construct an implicit input layer. We will then construct a fairly small model with two hidden layers and 10 nodes in each layer.
 
 Since this is a regression model the final layer should have one node and a linear activation function.
-
+```
 # create model architecture
 input_dim = X_train_proc.shape[1]
  
@@ -936,18 +938,22 @@ reg_model.add(Dense(10, activation='relu'))
 reg_model.add(Dense(1, activation='linear'))
  
 reg_model.summary()
+```
+![summary.png](summary.png)
 
-Loss
+# Loss
 
 Next we compile the model. We need to be sure to use a regression metric for the loss function. A loss function must always decrease as the model error decreases. For this reason, for instance, R2 would not work as a loss function, since it increases as the model learns.
 
 Most deep learning regression models will use MSE as the loss function.
-Optimizer
+
+# Optimizer
 
 Optimizers are optional but can speed up learning. The ‘Adam’ optimizer is a popular one for all model types that use gradient descent for learning.
 
 If you want to know more, you can refer to the documentation. https://keras.io/api/optimizers/
-Metrics
+
+# Metrics
 
 We can, optionally, add a list of metrics to our compile call and the model will keep track of how those metrics change in each epoch. Some metrics are accessible as string shortcuts, such as ‘mae’, but others must be instantiated as metrics classes, like:
 
@@ -956,31 +962,35 @@ metrics.MeanAbsoluteError()
 This is different from Sci-kit Learn. In Sci-kit learn we used functions to return metrics, but in Keras it expects classes that are instantiated for each model. This is because behind the scenes these class instances will be fit on the specific data so they can make calculations more quickly. Tensorflow is all about efficiency! The history of these metrics for each epoch will be stored in a dictionary returned by the .fit() method.
 
 A list of available metrics can be found at: https://keras.io/api/metrics/
-
+```
 # compile model with additional metrics
  
 reg_model.compile(loss='mse',
                   optimizer='adam',
                   metrics=[metrics.MeanAbsoluteError(),
                            metrics.RootMeanSquaredError()])
+```
 
 Next, we fit the model and save the learning history. We will set the verbosity to 0 to avoid the long, epoch by epoch output, but you can change that if you like to see the numbers go by during training.
-
+```
 history = reg_model.fit(X_train_proc, y_train,
                         validation_data = (X_test_proc, y_test),
                         epochs=100,
                         verbose=0)
-
+```
 We can plot the learning history for the loss function as well as all of the metrics we asked the model to keep track #of in the .compile() call. These are all stored in the history dictionary.
-
+```
 # plot learning
  
 plot_history(history)
+```
+
+![graph22.png](graph22.png)
 
 This model has a nice hockey-stick-shaped learning curve and the final training and testing scores are very similar. It does not seem to suffer from overfitting or underfitting. However, let’s check the metrics directly using Sci-kit learn metrics functions to get some solid numbers.
 
 Evaluating a final regression model in Keras is very similar to evaluating a more traditional Sci-kit Learn model.
-
+```
 # evaluate model
  
 y_pred = reg_model.predict(X_test_proc)
@@ -988,9 +998,492 @@ y_pred = reg_model.predict(X_test_proc)
 print(f'final RMSE: {np.sqrt(mean_squared_error(y_test, y_pred))}')
 print(f'final MAE: {mean_absolute_error(y_test, y_pred)}')
 print(f'final R2: {r2_score(y_test, y_pred)}')
+```
+
+![scores.png](scores.png)
 
 The R2 score shows us that our model is explaining about 87% of the variance in the target, the mean absolute error shows us that our model tends to make an error of about 2 miles per gallon, and since the root mean squared error is significantly higher than the mean absolute error, this shows us that it has made some larger errors on some samples.
 
-The code for this lesson is also available in this notebook
+The code for this lesson is also available in [this notebook](https://colab.research.google.com/drive/14ULbT1bOgzVidnElejv9RoQj7CCsKaw5?usp=sharing).
+
+**Note: due to the stochastic nature of deep learning models, you may not get the same results as this lesson, and the notebook outputs may not match.**
+
+---
+
+# Binary Classification Models in Keras
+
+Learning Objectives:
+
+    - Create a feed-forward model for binary classification using appropriate output layers, loss functions, and metrics in Keras.
+    - Evaluate a feed-forward binary classification model created in Kears using Sci-kit Learn metric functions..
+
+---
+
+# Steps
+
+![pic.jpg](pic.jpg)
+
+Photo by [National Cancer Institute](https://unsplash.com/@nci?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText) on [Unsplash](https://unsplash.com/s/photos/imaging-study?utm_source=unsplash&utm_medium=referral&utm_content=creditCopyText)
+
+As you recall, a classification problem is one in which you are trying to predict a discrete, finite, and non-overlapping number of classes. Binary classification is when you are trying to predict which of exactly 2 classes a sample belongs to. One example would be predicting if a tumor were malignant or benign. Let’s try this in Keras.
+
+# In this lesson, we will:
+
+    1. Import necessary libraries
+    2. Load and process the data
+    3. Build a feed-forward binary classification model with an appropriate output layer and loss function
+    4. Evaluate the model using classification metrics and a confusion matrix
+
+# Import Libraries
+```
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+ 
+#Keras
+from tensorflow.keras import Sequential
+from tensorflow.keras import metrics
+from tensorflow.keras.layers import Dense, Dropout
+ 
+#Sci-kit Learn
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+```
+We will also define a custom function to plot our learning history from the model.
+
+#Learning history plotting function
+
+def plot_history(history):
+```
+# Learning history plotting function
+def plot_history(history):
+  """Takes a keras model learning history and plots each metric"""
+  
+  metrics = history.history.keys()
+  
+  for metric in metrics:
+      if not 'val' in metric:
+        plt.plot(history.history[f'{metric}'], label=f'{metric}')
+        if f'val_{metric}' in metrics:
+          plt.plot(history.history[f'val_{metric}'], label=f'val_{metric}')
+        plt.legend()
+        plt.title(f'{metric}')
+        plt.show()
+```
+# Load and Process Data
+
+This dataset was taken from the University of Irvine Machine Learning Repository and describes the cell nuclei of breast tumors. It was first presented in 1992. The labels are ‘M’ for malignant and ‘B’ for benign tumors. Original [Data source](https://archive.ics.uci.edu/ml/datasets/breast+cancer+wisconsin+(diagnostic)).
+```
+# load classification data
+clf_url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTZf6XIYPLjxmCS8BzzEot1DaW4ns7P2q1CVqnZ6qw9f-A3bkCPbXX3H9vOE2_zrGKSxy4ZMaTf7lt4/pub?output=csv'
+df_clf = pd.read_csv(clf_url)
+df_clf.head()
+```
+![pandas data table5.png](pandas%20data%20table5.png)
+
+**Note**: not all columns shown.
+
+We will check for duplicates, datatypes, and missing values.
+```
+# check for duplicates and null values
+print(f'data info: {df_clf.info()}')
+print(f'\n duplicate rows: {df_clf.duplicated().sum()}')
+```
+![info2.png](info2.png)
+
+There is no missing data, no duplicates, and all features are numeric except for the target. Keras models do not accept strings as targets like Sci-kit Learn models, so we will need to encode the labels. In this case, we will just use a simple .replace() call. We will also drop the ‘id’ column since it doesn’t contain any information about the tumor.
+```
+# drop id and encode diagnosis
+df_clf.drop(columns='id', inplace=True)
+df_clf['diagnosis'].replace(['M','B'],[1,0], inplace=True)
+df_clf.head()
+```
+![pandas data table6.png](pandas%20data%20table6.png)
+
+Since this is classification and our class balance is very important in both model performance and evaluation, let’s check the balance of classes.
+```
+# check classes and balance
+df_clf['diagnosis'].value_counts()
+```
+The imbalance is not too bad, about 2:3. We will just need to remember this for understanding our accuracy score.
+
+Next we split the data.
+```
+# split data
+ 
+X = df_clf.drop(columns='diagnosis')
+y = df_clf['diagnosis']
+ 
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+```
+Since all of the features are numeric and there are no missing values, we can just scale it. **Remember to always scale your data before using it for deep learning.**
+```
+# scale data
+ 
+scaler = StandardScaler()
+ 
+X_train_sc = scaler.fit_transform(X_train)
+X_test_sc = scaler.transform(X_test)
+```
+---
+
+# Build the Model
+
+We will build a simple model with two hidden layers and 10 nodes in each layer. We will pass the number of features in the data to the input_dim= argument of the first layer so that Keras knows how to construct the implicit input layer.
+
+Since this is binary classification, the output layer will have one node and a ‘sigmoid’ activation function. The sigmoid function will change any value passed to it to a value between 0 and 1. That works because our classes in our target are 0 and 1. The predicted class will be the class number the predicted value is closest to. We will round this value later when we evaluate the model.
+```
+# create model architecture
+ 
+input_dim = X_train_sc.shape[1]
+ 
+clf_model = Sequential()
+ 
+clf_model.add(Dense(10, input_dim=input_dim, activation='relu'))
+clf_model.add(Dense(10, activation='relu'))
+clf_model.add(Dense(1, activation='sigmoid'))
+```
+The next step is to compile the model. We must consider 3 things to do this correctly:
+
+# Loss
+
+We use a binary cross-entropy loss function, or ‘bce’. Recall that the loss function should always decrease as the model learns, so we need some metric that decreases as the model gets better. Metrics like accuracy or f1-score won’t work as a loss because they increase in value as the model converges to a good solution. Binary cross-entropy decreases as the error rate decreases. If you want to know more about loss functions, what they do, and when each should be used, you can research the documentation at: https://keras.io/api/losses/
+
+# Optimizer
+
+There are many options for optimizers, which tend to improve the learning speed of a model. Adam is a popular one. You can research others at https://keras.io/api/optimizers/.
+
+# Metrics
+
+The .compile() method lets us pass additional metrics to be tracked for each learning epoch. If we want to see how they change as the model learns we can list them here.
+
+This method recognizes some metrics as string shortcuts, such as ‘accuracy’, but others must be passed as class instances, such as metrics.Recall(). These class instances work differently than the functions that Sci-kit learn offers for evaluation purposes. They fit on the specific data for the model and should not be reused. Instantiate a new instance of each metrics class for each model iteration.
+
+There is no native class for the f1-score metric, however, it’s possible to create custom metric classes. The code for some implementations of f1 score is available online. They are a little complicated, but you could copy and paste them with attribution if you wanted to.
+
+You can learn more about available metrics here: https://keras.io/api/metrics/
+
+**Since this is a classification problem, only classification metrics should be used here.**
+```
+# compile model with metrics
+clf_model.compile(loss='bce', optimizer='adam', metrics=['accuracy',
+                                                         metrics.Precision(),
+                                                         metrics.Recall()])
+```
+Next we will fit the model on the data and use the validation data to identify any overfitting. The model will evaluate itself using all metrics passed in the .compile() call for every epoch on both sets of data, though it will only actually train on the training data. We will also set verbose=0 to avoid the long output of learning metrics by epoch. If you want to see the training metrics in real-time, you can change this argument.
+```
+history = clf_model.fit(X_train_sc, y_train,
+                        validation_data=(X_test_sc, y_test),
+                        epochs=15,
+                        verbose=0)
+```
+Let’s use our custom function to see the history of learning using each of our passed metrics.
+```
+# plot learning history
+plot_history(history)
+```
+
+![graph23.png](graph23.png)
+
+It appears that learning has leveled off, the train and test set metrics are not overly far apart, and the final scores seem pretty good. There don’t appear to be any serious problems with overfitting or underfitting.
+
+Let’s look at a classification report and a confusion matrix.
+
+We are going to use the Sci-kit Learn tools for this, but we need to do one step before we can. A sigmoid function doesn’t return just 0s and 1, but a value between those. Sci-kit Learn classification metrics can’t handle floats, so we need to round the predictions to the closest integer before using them for evaluation.
+
+ConfusionMatrixDisplay.from_estimator() can’t use a Keras model to create a confusion matrix, so we will use the ConfusionMatrixDisplay.from_predictions() method to create our confusion matrix heatmap.
+```
+# evaluate model
+ 
+#make predictions
+y_preds = clf_model.predict(X_test_sc)
+ 
+# round the predictions
+y_preds = np.round(y_preds)
+ 
+print(classification_report(y_test, y_preds))
+ 
+ConfusionMatrixDisplay.from_predictions(y_test, y_preds, cmap='Blues');
+```
+
+![graph24.png](graph24.png)
+
+# Evaluation
+
+Our model seems to have performed well with higher precision on class 0 (benign) and a higher recall on class 1 (malignant). This is good. It shows us that when the model predicts benign, it is seldom wrong and it was successful in identifying most of the malignant tumors. The confusion matrix confirms this showing that it only misclassified one malignant tumor as benign.
+
+The notebook with the code for this lesson is available [here](https://colab.research.google.com/drive/1zCp0MTkFGWEailEV6jftwfJKyXsw_aR0?usp=sharing).
+
+**Note: due to the stochastic nature of deep learning models, you may not get the same results as this lesson, and the notebook outputs may not match.**
+
+---
+
+# Multiclass Classification Models in Keras
+
+''Learning Objectives:
+
+    - Preprocess a multiclass target for a Keras deep learning model.
+    - Create a feed-forward model for multiclass classification using appropriate output layers, loss functions, and metrics in Keras.
+    - Evaluate a feed-forward multiclass classification model created in Keras using Sci-kit Learn metric functions.
+
+---
+
+# Steps
+
+Photo by Sebastian Pena Lambarri on Unsplash
+
+As you recall, a classification problem is one in which you are trying to predict a discrete, finite, and non-overlapping number of classes. Multiclass classification is when you are trying to predict which of 3 or more classes a sample belongs to. This is handled a little differently in Keras models than binary classification, although most of the same metrics can apply. One example is a model that tries to classify fish into a limited number of known species using measurements of size and weight. Let’s try this in Keras.!
+In this lesson we will:
+
+    Import necessary libraries
+    Load and process data,
+    One-hot encode the target variable
+    Build a feed-forward multiclass classification model with an appropriate output layer and loss function
+    Evaluate the model using classification metrics and a confusion matrix
+
+Import Libraries
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+ 
+#Keras
+from tensorflow.keras import Sequential
+from tensorflow.keras import metrics
+from tensorflow.keras.layers import Dense, Dropout
+ 
+#Sci-kit Learn
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+We will also define a custom function to plot our learning history from the model.
+
+# Learning history plotting function
+def plot_history(history):
+  """Takes a keras model learning history and plots each metric"""
+  
+  metrics = history.history.keys()
+  
+  for metric in metrics:
+      if not 'val' in metric:
+        plt.plot(history.history[f'{metric}'], label=f'{metric}')
+        if f'val_{metric}' in metrics:
+          plt.plot(history.history[f'val_{metric}'], label=f'val_{metric}')
+        plt.legend()
+        plt.title(f'{metric}')
+        plt.show()
+
+Load and Process Data
+
+The data we will be using is collected from a fish market and represents data about nine different common fish species. It was originally downloaded from Kaggle and originally provided by SAS OnDemand for Academics.
+
+This dataset only has 159 rows and that would usually be too small for deep learning to be effective, however, it will work for demonstration purposes.
+
+# Load Data
+multi_url = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR_I2xiiboTvyDr5-Cvvo_m7tnoT2tVnzOWUYf2xBZEhTWiWtZOyerF3c2aQeym10S8T2yHnTPnlPi2/pub?output=csv'
+df_multi = pd.read_csv(multi_url)
+df_multi.head()
+
+# Check for duplicates and missing data
+print(df_multi.info())
+print(f'{df_multi.duplicated().sum()} duplicate rows')
+
+Other than the target all of the columns are numeric and there are no duplicates. However, we have some rows with missing values. Let’s see how many rows are missing at least one value.
+
+# count rows with missing values
+na_rows = df_multi.isna().any(axis=1).sum()
+print(f'{na_rows} rows are missing data')
+print(f'{na_rows/len(df_multi)*100:.1f}% of rows are missing data')
+
+This is more than 10% and normally we would try to impute these. However, we may worry that imputation errors will severely affect our model. We will try dropping them, but if we were going to continue with this project we might try both versions of the data, with dropped nulls and imputed nulls, to see which trains a better model.
+
+# drop missing data
+df_multi.dropna(inplace=True)
+print(df_multi.info())
+
+Since we are performing classification, we should always check our class balance to help us make decisions about data preparation and to help us properly interpret our accuracy scores.
+
+# check class balance
+df_multi['Species'].value_counts()
+
+Our training set is very imbalanced. We could apply some balancing techniques, but with so few training instances it would be pointless to oversample or undersample the data. We could try SMOTE, but we might expect limited success. In this case, we will just leave it and hope for the best.
+
+There are also only 2 ‘Beam’ fish in the dataset. A Google search shows that there is no fish named a ‘Beam’. We will combine this with ‘Bream’
+
+df_multi['Species'].replace('Beam', 'Bream', inplace=True)
+
+Next, we will split the data into X features and y target and training and validation sets.
+
+# split data
+X = df_multi.drop(columns='Species')
+y = df_multi['Species']
+X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                    random_state=42,
+                                                    stratify=y)
+
+We can also expect our accuracy score to be an unreliable measure of our model’s performance.
+
+Data features for deep learning should always be scaled to avoid exploding weights. Exploding weights causes some weights to grow very large and be given too much emphasis by the model. This can lead to overfitting problems.
+
+# scale data
+scaler = StandardScaler()
+ 
+X_train_sc = scaler.fit_transform(X_train)
+X_test_sc = scaler.transform(X_test)
+
+Encode the Target
+
+One important difference between binary classification and multiclass classification is how we encode the target. In binary classification, we need to make sure that the two classes are encoded as 0 and 1.
+
+In multiclass classification, we both numerically encode and one-hot encode, or binarize, the target.
+
+We will end up with 3 versions of the labels: original, numerically encoded, and binarized.
+
+from sklearn.preprocessing import LabelEncoder, LabelBinarizer
+# encode labels
+encoder = LabelEncoder()
+ 
+encoder.fit(y_train)
+y_train_enc = encoder.transform(y_train)
+y_test_enc = encoder.transform(y_test)
+ 
+# make a record of the classes, in order of the encoding, in case we want to 
+# translate predictions into fish names later.
+classes = encoder.classes_
+ 
+# binarize labels
+binarizer = LabelBinarizer()
+ 
+binarizer.fit(y_train_enc)
+y_train_bin = binarizer.transform(y_train_enc)
+y_test_bin = binarizer.transform(y_test_enc)
+ 
+# check results
+print('Original Target')
+print(y_train.head())
+ 
+print('\nEncoded Target')
+print(y_train_enc[:5])
+ 
+print('\nBinarized Target')
+print(y_train_bin[:5])
+
+Create the Keras Model
+
+We are ready to create our model architecture. We will set the input dimensions to the number of features in the incoming training data so Keras can create the correct implied input layer.
+
+Some previous experiments have shown us that we need a model with some complexity, 2 hidden layers with 50 nodes each, but that complexity also led to overfitting problems. We will use dropout layers to regularize our model to combat that. You will learn about dropout layers in another lesson, but to suffice it to say they reduce overfitting.
+Output Layer
+
+Also, notice our output layer. The number of nodes in the output layer must match the number of classes in the target. In this case, we are classifying fish into 7 different species, so the output layer needs 7 nodes. Recall that we binarized our target to 7 columns so the output predictions of the model will match the shape of the true labels. We’ve coded this algorithmically by using the length of the number of classes from the encoder object. This avoids errors in case we change the number of classes earlier in the process for some reason.
+
+Finally, notice the activation function of the output layer. For multi-class classification, we use the ‘softmax’ activation. This outputs a matrix of probabilities with each value in a row equal to the probability that the sample belongs to each of the classes. The output will have 7 columns with 7 probabilities corresponding to the 7 different species of fish. Later during evaluation and prediction, we will extract the index of the column with the highest probability and take that as the prediction.
+
+# create model architecture
+ 
+# define some parameters
+input_dim = X_train_sc.shape[1]
+num_classes = len(classes)
+ 
+# instantiate the base model
+multi_model = Sequential()
+ 
+# add layers
+multi_model.add(Dense(50, input_dim=input_dim, activation='relu'))
+multi_model.add(Dropout(.3))
+multi_model.add(Dense(50, activation='relu'))
+multi_model.add(Dropout(.3))
+multi_model.add(Dense(num_classes, activation='softmax'))
+multi_model.summary()
+
+Before we train the model we need to compile it, to build it in the memory of our computer. We will define the loss, optimizer, and any additional metrics we want the compiler to keep track of for each epoch during training.
+Loss
+
+The loss for a Keras model performing multiclass classification will be ‘categorical_crossentropy’ when the target is binarized. There are some ways to avoid binarizing the true labels, but they run into some other limitations. You would also use a different loss function if the true labels were not binarized. If you want to know more about loss functions, what they do, and when each should be used, you can research the documentation at: https://keras.io/api/losses/
+Optimizer
+
+An optimizer can speed up learning, and Adam is a popular optimizer. We will start with that here. There are other optimizers you can try that work with any kind of problem. You can research other options here: https://keras.io/api/optimizers/
+Metrics
+
+The .compile() method lets us pass additional metrics to be tracked for each learning epoch. If we want to see how they change as the model learns we can list them here.
+
+This method recognizes some metrics as string shortcuts, such as ‘accuracy’, but others must be passed as class instances, such as metrics.Recall(). These class instances work differently than the functions that Sci-kit learn offers for evaluation purposes. They fit on the specific data for the model and should not be reused. Instantiate a new instance of each metrics class for each model iteration.
+
+There is no native class for the f1-score metric, however, it’s possible to create custom metric classes. The code for some implementations of the F1-score metric class is available online. They are a little complicated, but you could copy and paste them with attribution if you wanted to.
+
+You can learn more about available metrics here: https://keras.io/api/metrics/
+
+Since this is a classification problem, only classification metrics should be used here.
+
+# compile model with categorical_crossentropy
+ 
+multi_model.compile(loss='categorical_crossentropy', 
+                    optimizer='adam', 
+                    metrics=['accuracy',
+                             metrics.Precision(),
+                             metrics.Recall()])
+
+Next, we will fit the model on the data and use the validation data to identify any overfitting. The model will evaluate itself using all metrics passed in the .compile() call for every epoch on both sets of data, though it will only actually train on the training data. We will also set verbose=0 to avoid the long output of learning metrics by epoch. If you want to see the training metrics in real-time, you can change this argument.
+
+# fit model
+ 
+history = multi_model.fit(X_train_sc, y_train_bin,
+                          validation_data=(X_test_sc, y_test_bin),
+                          epochs=150,
+                          verbose=0)
+
+Let’s use our custom function to see the history of learning using each of the metrics we passed to the compile method.
+
+# plot learning history
+
+plot_history(history)
+
+The learning converges on fairly good scores according to our accuracy, precision, and recall metrics. There is no severe underfitting. We also see that the final training scores and testing scores are pretty close. The model is not overfitting overly much.
+
+The metrics along the training history are somewhat bumpy. This is likely caused by the small dataset and class imbalance.
+Evaluate the Multiclass Classification Model
+
+There are some differences in how we need to process the model predictions to use Sci-Kit Learn evaluation functions. Sci-Kit learn expects a one-dimensional array of predictions and labels, but our predictions and binarized labels are 2 dimensional. Each column represents a different fish species and the values in each column represent the model’s estimation of the probability that the fish belongs to that species.
+
+Notice that these are represented in scientific notation. For example:
+
+9.2e-03 = .0092
+
+9.8e-01 = .98
+
+Here is an additional resource on scientific notation in Python, if it is not clear.
+
+# get raw predictions
+raw_pred = multi_model.predict(X_test_sc)
+ 
+# display predictions and binarized true labels
+print('Raw Predictions\n', raw_pred[:5])
+print('\nbinarized y_test\n', y_test_bin[:5])
+
+To use these predictions in a Sci-kit Learn function, we need to convert them to the integer label for each fish. We can do that with np.argmax(data, axis=1). This will return the column index for the highest value in each row. That column index corresponds to the fish species.
+
+# convert predictions and labels into integers representing each fish class.
+y_pred = np.argmax(raw_pred, axis=1)
+y_true = np.argmax(y_test_bin, axis=1)
+ 
+print('integer predictions', y_pred)
+print('integer true labels', y_true)
+
+Now we are ready to use Sci-kit learn tools to evaluate our model. Let’s use a classification report and a confusion matrix.
+
+# print classification report and confusion matrix
+ 
+print(classification_report(y_true, y_pred))
+ConfusionMatrixDisplay.from_predictions(y_true, y_pred,
+                                        display_labels=classes,
+                                        xticks_rotation=45);
+
+Model Evaluation
+
+Our model correctly classified 83% of the fish, however, it was unable to classify Whitefish or Roaches. This is likely because there are very few of those fish in the dataset. Again, we run into the problems of a too-small dataset.
+
+The notebook with the code for this lesson is available here.
 
 Note: due to the stochastic nature of deep learning models, you may not get the same results as this lesson, and the notebook outputs may not match.
