@@ -2,7 +2,7 @@
 
 - Describe why deep learning is so popular.
 - Explain how neural networks work at a high level.
-- 
+
 ---
 
 # Intro to Deep Learning
@@ -340,8 +340,8 @@ The dataset is from [Data.World](https://data.world/exercises/logistic-regressio
 
 The target column is defined as:
 
-    y = 0 if career years played < 5
-    y = 1 if career years played >= 5
+- y = 0 if career years played < 5
+- y = 1 if career years played >= 5
 ```
 # Get data
 df = pd.read_csv('/content/drive/MyDrive/DS 12wk PT Curriculum/data/nba.csv', index_col = 'Name')
