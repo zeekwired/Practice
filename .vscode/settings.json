@@ -1,16 +1,13 @@
 {
     "jupyter.kernels.filter": [
         {
-            "path": "Users\\zachd\\anaconda3\\envs\\dojo-env\\python",
-            "type": "pythonEnvironment"
-        },
-        {
-            "path": "c:\\Users\\zachd\\anaconda3\\envs\\dojo-env\\python.exe",
+            "path": "\\Users\\zachd\\anaconda3\\envs\\dojo-env\\python",
             "type": "pythonEnvironment"
         },
         {
             "path": "c:\\Users\\zachd\\AppData\\Roaming\\jupyter\\kernels\\dojo-env\\kernel.json",
             "type": "jupyterKernelspec"
         }
-    ]
+    ],
+    "python.analysis.typeCheckingMode": "off"
 }
