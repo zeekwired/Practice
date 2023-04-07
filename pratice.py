@@ -1,9 +1,12 @@
-user_input = '90 92 94 95'
-hourly_temperature = user_input.split(' ')
+user_input = '1 2 3, 4 5 6, 7 8 9, 10 11 12, 13 14 15'
+lines = user_input.split(',')
 
-for i in hourly_temperature:
-    print(f'{i}', end=' ')
-    if i == hourly_temperature[-1]:
-        pass
-    else:
-        print(' -> ', end=' ')
+mult_table = [[int(num) for num in line.split()] for line in lines]
+
+for row in mult_table:
+    for num in row:
+        if num < max(row):
+            print(num, end=' | ')
+        else:
+            print(num, end='')
+    print()
